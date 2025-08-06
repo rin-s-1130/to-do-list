@@ -18,7 +18,7 @@ export const taskForm = writable({
   type: 'work',
   name: '',
   due_date: '',
-  importance: 3,
+  importance: 5,
   effort_hours: 1,
   parent_id: null
 })
@@ -139,7 +139,7 @@ export const taskActions = {
         type: 'work',
         name: '',
         due_date: '',
-        importance: 3,
+        importance: 5,
         effort_hours: 1,
         parent_id: null
       })

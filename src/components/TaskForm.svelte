@@ -10,11 +10,11 @@
   ]
 
   const importanceOptions = [
-    { value: 1, label: '1 - 低' },
-    { value: 2, label: '2' },
-    { value: 3, label: '3 - 中' },
+    { value: 5, label: '5 - 高' },
     { value: 4, label: '4' },
-    { value: 5, label: '5 - 高' }
+    { value: 3, label: '3 - 中' },
+    { value: 2, label: '2' },
+    { value: 1, label: '1 - 低' }
   ]
 
   // 今日の日付を取得（デフォルトの締切日として使用）
@@ -46,6 +46,18 @@
   function handleInputChange(field, value) {
     taskForm.update(form => ({ ...form, [field]: value }))
   }
+  
+  // parent_idの型を正しく管理
+  $: if ($taskForm.parent_id === '') {
+    taskForm.update(form => ({ ...form, parent_id: null }))
+  }
+  
+  // タスクタイプ変更時に親タスクをリセット
+  let previousType = $taskForm.type
+  $: if ($taskForm.type !== previousType) {
+    taskForm.update(form => ({ ...form, parent_id: null }))
+    previousType = $taskForm.type
+  }
 
   // 締切日の最小値（今日）
   const minDate = today.toISOString().split('T')[0]
@@ -55,8 +67,10 @@
     taskForm.update(form => ({ ...form, due_date: defaultDueDate }))
   }
 
-  // 親タスクの選択肢（親タスクのみ）
-  $: parentTaskOptions = $tasks.filter(task => task.parent_id === null)
+  // 親タスクの選択肢（同じ種類の親タスクのみ）
+  $: parentTaskOptions = $tasks.filter(task => 
+    task.parent_id === null && task.type === $taskForm.type
+  )
 
   // タスクタイプのアイコン取得
   function getTaskTypeIcon(type) {
@@ -170,7 +184,7 @@
         id="parent-task"
         class="form-input max-w-md"
         value={$taskForm.parent_id || ''}
-        on:change={(e) => handleInputChange('parent_id', e.target.value || null)}
+        on:change={(e) => handleInputChange('parent_id', e.target.value ? parseInt(e.target.value) : null)}
       >
         <option value="">独立したタスク</option>
         {#each parentTaskOptions as task}

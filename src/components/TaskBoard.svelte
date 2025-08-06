@@ -58,40 +58,31 @@
     {/each}
   </div>
 
-  <!-- 3列タスクボード -->
+  <!-- タスクボード（1列） -->
   {#if $tasksByType}
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      {#each Object.entries(taskTypeConfig) as [type, config]}
-        <div class="min-h-96">
-          <!-- 列ヘッダー -->
-          <div class="sticky top-0 z-10 {config.headerColor} px-4 py-3 rounded-t-lg border {config.borderColor}">
-            <div class="flex items-center justify-between">
-              <h3 class="font-semibold">
-                {config.label}
-              </h3>
-              <span class="text-sm">
-                {$tasksByType[type].length}件
-              </span>
-            </div>
+    {@const currentTasks = $selectedTaskType === 'all' 
+      ? [...$tasksByType.work, ...$tasksByType.home, ...$tasksByType.skill]
+      : $tasksByType[$selectedTaskType]}
+    
+    <div class="max-w-4xl mx-auto">
+      <!-- タスクリスト -->
+      <div class="bg-white border border-gray-200 rounded-lg p-6">
+        {#if currentTasks.length === 0}
+          <div class="text-center py-12 text-gray-500">
+            <div class="text-6xl mb-4">📝</div>
+            <h3 class="text-lg font-medium text-gray-900 mb-2">タスクがありません</h3>
+            <p class="text-sm">上のフォームから新しいタスクを追加してください</p>
           </div>
-
-          <!-- タスクリスト -->
-          <div class="min-h-80 {config.bgColor} border-l border-r border-b {config.borderColor} rounded-b-lg p-4 space-y-3">
-            {#if $tasksByType[type].length === 0}
-              <div class="text-center py-8 text-gray-500">
-                <div class="text-4xl mb-2">📝</div>
-                <p class="text-sm">タスクがありません</p>
+        {:else}
+          <div class="space-y-4">
+            {#each currentTasks as task (task.id)}
+              <div class="fade-in">
+                <TaskCard {task} />
               </div>
-            {:else}
-              {#each $tasksByType[type] as task (task.id)}
-                <div class="fade-in">
-                  <TaskCard {task} />
-                </div>
-              {/each}
-            {/if}
+            {/each}
           </div>
-        </div>
-      {/each}
+        {/if}
+      </div>
     </div>
   {:else}
     <div class="flex justify-center py-12">
@@ -101,34 +92,39 @@
 
   <!-- 統計情報 -->
   {#if $tasksByType}
-    <div class="bg-gray-50 rounded-lg p-4">
-      <h4 class="font-medium text-gray-900 mb-3">📊 タスク統計</h4>
+    {@const allTasks = [...$tasksByType.work, ...$tasksByType.home, ...$tasksByType.skill]}
+    {@const currentViewTasks = $selectedTaskType === 'all' ? allTasks : $tasksByType[$selectedTaskType]}
+    
+    <div class="bg-gray-50 rounded-lg p-4 max-w-4xl mx-auto">
+      <h4 class="font-medium text-gray-900 mb-3">📊 
+        {$selectedTaskType === 'all' ? 'すべてのタスク' : taskTypeConfig[$selectedTaskType]?.label || 'タスク'}統計
+      </h4>
       <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
         <div class="text-center">
           <div class="font-bold text-lg">
-            {$tasksByType.work.length + $tasksByType.home.length + $tasksByType.skill.length}
+            {currentViewTasks.length}
           </div>
-          <div class="text-gray-600">総タスク数</div>
+          <div class="text-gray-600">
+            {$selectedTaskType === 'all' ? '総タスク数' : 'タスク数'}
+          </div>
         </div>
         <div class="text-center">
           <div class="font-bold text-lg">
-            {($tasksByType.work.reduce((sum, t) => sum + (t.total_effort_hours || t.effort_hours), 0) +
-              $tasksByType.home.reduce((sum, t) => sum + (t.total_effort_hours || t.effort_hours), 0) +
-              $tasksByType.skill.reduce((sum, t) => sum + (t.total_effort_hours || t.effort_hours), 0)).toFixed(1)}h
+            {currentViewTasks.reduce((sum, t) => sum + (t.total_effort_hours || t.effort_hours), 0).toFixed(1)}h
           </div>
-          <div class="text-gray-600">総工数</div>
+          <div class="text-gray-600">
+            {$selectedTaskType === 'all' ? '総工数' : '工数'}
+          </div>
         </div>
         <div class="text-center">
           <div class="font-bold text-lg">
-            {[...$tasksByType.work, ...$tasksByType.home, ...$tasksByType.skill]
-              .filter(t => t.urgencyLevel === 'high').length}
+            {currentViewTasks.filter(t => t.urgencyLevel === 'high').length}
           </div>
           <div class="text-gray-600">高緊急度</div>
         </div>
         <div class="text-center">
           <div class="font-bold text-lg">
-            {[...$tasksByType.work, ...$tasksByType.home, ...$tasksByType.skill]
-              .filter(t => {
+            {currentViewTasks.filter(t => {
                 const dueDate = new Date(t.due_date)
                 const tomorrow = new Date()
                 tomorrow.setDate(tomorrow.getDate() + 1)
@@ -138,6 +134,26 @@
           <div class="text-gray-600">明日まで</div>
         </div>
       </div>
+      
+      {#if $selectedTaskType === 'all'}
+        <!-- カテゴリ別内訳 -->
+        <div class="mt-4 pt-4 border-t border-gray-200">
+          <div class="grid grid-cols-3 gap-4 text-xs">
+            <div class="text-center">
+              <div class="text-blue-600 font-bold">{$tasksByType.work.length}</div>
+              <div class="text-gray-600">💼 仕事</div>
+            </div>
+            <div class="text-center">
+              <div class="text-green-600 font-bold">{$tasksByType.home.length}</div>
+              <div class="text-gray-600">🏠 家</div>
+            </div>
+            <div class="text-center">
+              <div class="text-purple-600 font-bold">{$tasksByType.skill.length}</div>
+              <div class="text-gray-600">📚 スキル</div>
+            </div>
+          </div>
+        </div>
+      {/if}
     </div>
   {/if}
 </div>
