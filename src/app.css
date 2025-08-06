@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* カスタムスタイル */
+@layer components {
+  .task-card {
+    @apply rounded-lg p-4 mb-3 shadow-md border-l-4 transition-all duration-200 hover:shadow-lg;
+  }
+  
+  .task-card.urgency-high {
+    @apply border-l-red-500 bg-red-50;
+  }
+  
+  .task-card.urgency-medium {
+    @apply border-l-amber-500 bg-amber-50;
+  }
+  
+  .task-card.urgency-low {
+    @apply border-l-blue-500 bg-blue-50;
+  }
+  
+  .form-input {
+    @apply w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500;
+  }
+  
+  .btn-primary {
+    @apply bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md transition-colors duration-200;
+  }
+}
