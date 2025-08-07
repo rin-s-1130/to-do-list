@@ -8,6 +8,7 @@
   const dispatch = createEventDispatcher()
   let isCompleting = false
   let showSubtasks = false
+  let isCompletingWithAnimation = false
 
   // 緊急性レベルに応じたスタイル
   $: urgencyStyle = {
@@ -18,6 +19,15 @@
 
   // 締切日の表示とスタイル
   $: dueInfo = (() => {
+    // 期限なしの場合
+    if (!task.due_date) {
+      return { 
+        label: '期限なし', 
+        style: 'text-blue-600 bg-blue-100', 
+        diffDays: Infinity 
+      }
+    }
+    
     const dueDate = new Date(task.due_date)
     const today = new Date()
     const diffDays = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24))
@@ -45,16 +55,29 @@
 
   // タスク完了処理
   async function handleComplete() {
-    if (isCompleting) return
+    if (isCompleting || isCompletingWithAnimation) return
     
     isCompleting = true
+    isCompletingWithAnimation = true
+    
     try {
-      await taskActions.completeTask(task.id)
-      dispatch('completed', task)
+      // 1.5秒後にタスクを完了
+      setTimeout(async () => {
+        try {
+          await taskActions.completeTask(task.id)
+          dispatch('completed', task)
+        } catch (error) {
+          console.error('タスク完了エラー:', error)
+          isCompletingWithAnimation = false
+        } finally {
+          isCompleting = false
+        }
+      }, 1500)
+      
     } catch (error) {
       console.error('タスク完了エラー:', error)
-    } finally {
       isCompleting = false
+      isCompletingWithAnimation = false
     }
   }
 
@@ -70,13 +93,34 @@
     document.querySelector('form')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
-  // サブタスク完了処理
+  // サブタスク完了処理（アニメーション付き）
+  let completingSubtasks = new Set()
+  
   async function handleSubtaskComplete(subtaskId) {
+    if (completingSubtasks.has(subtaskId)) return
+    
     try {
-      await taskActions.completeTask(subtaskId)
-      dispatch('completed', { id: subtaskId, isSubtask: true })
+      // アニメーション開始
+      completingSubtasks.add(subtaskId)
+      completingSubtasks = new Set(completingSubtasks)
+      
+      // 1.5秒後に実際に完了処理
+      setTimeout(async () => {
+        try {
+          await taskActions.completeTask(subtaskId)
+          dispatch('completed', { id: subtaskId, isSubtask: true })
+        } catch (error) {
+          console.error('サブタスク完了エラー:', error)
+        } finally {
+          completingSubtasks.delete(subtaskId)
+          completingSubtasks = new Set(completingSubtasks)
+        }
+      }, 1500)
+      
     } catch (error) {
       console.error('サブタスク完了エラー:', error)
+      completingSubtasks.delete(subtaskId)
+      completingSubtasks = new Set(completingSubtasks)
     }
   }
 
@@ -112,8 +156,26 @@
     return colors[importance] || 'bg-gray-100 text-gray-700'
   }
 
+  // サブタスクの完了状況を計算
+  $: subtaskStats = (() => {
+    if (!task.subtasks || task.subtasks.length === 0 || task.parent_id !== null) {
+      return null
+    }
+    
+    const totalSubtasks = task.subtasks.length
+    const completedSubtasks = task.subtasks.filter(subtask => subtask.status === 'done').length
+    const activeSubtasks = totalSubtasks - completedSubtasks
+    
+    return {
+      total: totalSubtasks,
+      completed: completedSubtasks,
+      active: activeSubtasks,
+      canComplete: activeSubtasks === 0
+    }
+  })()
+
   // 親タスクの場合、すべてのサブタスクが完了しているかチェック
-  $: canCompleteParentTask = !task.subtasks || task.subtasks.length === 0 || task.parent_id !== null
+  $: canCompleteParentTask = !task.subtasks || task.subtasks.length === 0 || task.parent_id !== null || (subtaskStats && subtaskStats.canComplete)
 
   // タスク編集
   function handleEditTask() {
@@ -130,7 +192,7 @@
   }
 </script>
 
-<div class="task-card {urgencyStyle} hover:shadow-lg transition-all duration-200 cursor-pointer group relative">
+<div class="task-card {urgencyStyle} hover:shadow-lg transition-all cursor-pointer group relative {isCompletingWithAnimation ? 'duration-1000 opacity-0 scale-95 transform translate-x-4' : 'duration-200 opacity-100 scale-100 transform translate-x-0'}">
   <!-- メインタスク情報 -->
   <div class="flex items-start justify-between">
     <div class="flex-1 min-w-0">
@@ -180,6 +242,11 @@
               {showSubtasks ? '📂' : '📁'}
             </span>
             サブタスク {task.subtasks.length}件
+            {#if subtaskStats}
+              <span class="ml-2 text-xs {subtaskStats.canComplete ? 'text-green-600' : 'text-orange-600'} font-medium">
+                ({subtaskStats.completed}/{subtaskStats.total})
+              </span>
+            {/if}
             <span class="ml-2 text-xs text-gray-500">
               {showSubtasks ? '▲' : '▼'}
             </span>
@@ -194,7 +261,10 @@
   {#if showSubtasks && task.subtasks && task.subtasks.length > 0}
     <div class="mt-4 space-y-3 relative z-20">
       {#each task.subtasks as subtask}
-        <div class="border rounded-lg p-3 transition-shadow duration-200 group/subtask
+        <div class="border rounded-lg p-3 transition-all group/subtask
+                    {completingSubtasks.has(subtask.id) 
+                      ? 'duration-1000 opacity-0 scale-95 transform translate-x-4' 
+                      : 'duration-200 opacity-100 scale-100 transform translate-x-0'}
                     {subtask.status === 'done'
                       ? 'bg-green-50 bg-opacity-90 border-green-200' 
                       : 'bg-white bg-opacity-80 border-gray-200 hover:shadow-sm'}">
@@ -307,10 +377,13 @@
           </span>
         {/if}
       </button>
-    {:else}
-      <!-- サブタスクが未完了の場合のメッセージ -->
+    {:else if subtaskStats}
+      <!-- サブタスクの完了状況表示 -->
       <div class="px-4 py-2 bg-yellow-100 text-yellow-800 rounded-full text-sm font-medium shadow-md">
-        サブタスクを完了してください
+        サブタスク ({subtaskStats.completed}/{subtaskStats.total})
+        {#if subtaskStats.active > 0}
+          - あと{subtaskStats.active}件
+        {/if}
       </div>
     {/if}
   </div>

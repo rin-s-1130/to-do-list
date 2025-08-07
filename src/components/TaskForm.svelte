@@ -33,8 +33,9 @@
       return
     }
     
-    if (!$taskForm.due_date) {
-      alert('締切日を選択してください')
+    // 期限なしの場合はバリデーションをスキップ
+    if ($taskForm.due_date !== null && !$taskForm.due_date) {
+      alert('締切日を選択するか、期限なしを選択してください')
       return
     }
 
@@ -175,16 +176,33 @@
       <label for="due-date" class="block text-sm font-medium text-gray-700 mb-1">
         締切日 <span class="text-red-500">*</span>
       </label>
-      <input
-        id="due-date"
-        type="date"
-        class="form-input"
-        value={$taskForm.due_date}
-        min={minDate}
-        on:change={(e) => handleInputChange('due_date', e.target.value)}
-        disabled={$taskForm.parent_id !== null}
-        required
-      />
+      <div class="space-y-2">
+        <!-- 期限なしのチェックボックス -->
+        <label class="flex items-center">
+          <input
+            type="checkbox"
+            class="mr-2"
+            checked={$taskForm.due_date === null}
+            on:change={(e) => handleInputChange('due_date', e.target.checked ? null : defaultDueDate)}
+            disabled={$taskForm.parent_id !== null}
+          />
+          <span class="text-sm text-gray-600">📅 期限なし（無限）</span>
+        </label>
+        
+        <!-- 日付入力（期限ありの場合のみ表示） -->
+        {#if $taskForm.due_date !== null}
+          <input
+            id="due-date"
+            type="date"
+            class="form-input"
+            value={$taskForm.due_date || ''}
+            min={minDate}
+            on:change={(e) => handleInputChange('due_date', e.target.value)}
+            disabled={$taskForm.parent_id !== null}
+            required
+          />
+        {/if}
+      </div>
       {#if $taskForm.parent_id !== null}
         <p class="mt-1 text-xs text-gray-500">親タスクの締切日に自動設定されます</p>
       {/if}

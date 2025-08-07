@@ -296,11 +296,11 @@ export const taskActions = {
 
 // 履歴操作関数
 export const historyActions = {
-  // 履歴読み込み
+  // 履歴読み込み（階層構造）
   async loadHistory(startDate = null, endDate = null) {
     try {
       loading.set(true)
-      const historyData = await historyService.getHistory(startDate, endDate)
+      const historyData = await historyService.getHierarchicalHistory(startDate, endDate)
       history.set(historyData)
     } catch (err) {
       error.set('履歴の読み込みに失敗しました: ' + err.message)
@@ -410,7 +410,7 @@ export const loadTasks = taskActions.loadTasks
 export const loadSettings = settingsActions.loadSettings
 export const loadHistory = historyActions.loadHistory
 
-// 統計用の派生ストア
+// 統計用の派生ストア（階層構造対応）
 export const historyStats = derived(
   [history],
   ([$history]) => {
@@ -428,18 +428,33 @@ export const historyStats = derived(
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
     
     const stats = {
-      totalTasks: $history.length,
+      totalTasks: 0,
       totalEffort: 0,
       byType: { work: 0, home: 0, skill: 0 },
       recent7Days: 0
     }
 
-    $history.forEach(record => {
-      stats.totalEffort += record.effort_hours
-      stats.byType[record.task_type] += record.effort_hours
+    $history.forEach(parentRecord => {
+      // 親タスクをカウント
+      stats.totalTasks += 1
+      stats.totalEffort += parentRecord.effort_hours
+      stats.byType[parentRecord.task_type] += parentRecord.effort_hours
       
-      if (new Date(record.completed_at) >= sevenDaysAgo) {
-        stats.recent7Days += record.effort_hours
+      if (new Date(parentRecord.completed_at) >= sevenDaysAgo) {
+        stats.recent7Days += parentRecord.effort_hours
+      }
+
+      // サブタスクがある場合はそれらもカウント
+      if (parentRecord.subtasks) {
+        parentRecord.subtasks.forEach(subtask => {
+          stats.totalTasks += 1
+          stats.totalEffort += subtask.effort_hours
+          stats.byType[subtask.task_type] += subtask.effort_hours
+          
+          if (new Date(subtask.completed_at) >= sevenDaysAgo) {
+            stats.recent7Days += subtask.effort_hours
+          }
+        })
       }
     })
 

@@ -9,7 +9,7 @@ class TodoDatabase extends Dexie {
       // タスクテーブル
       tasks: '++id, type, name, due_date, importance, effort_hours, parent_id, status, created_at, updated_at',
       // 履歴テーブル
-      history: '++id, task_id, completed_at, effort_hours, task_name, task_type',
+      history: '++id, task_id, completed_at, effort_hours, task_name, task_type, parent_id',
       // 設定テーブル（緊急性計算式など）
       settings: '++id, key, value, updated_at'
     })
@@ -115,7 +115,8 @@ export const taskService = {
       completed_at: new Date().toISOString(),
       effort_hours: task.effort_hours,
       task_name: task.name,
-      task_type: task.type
+      task_type: task.type,
+      parent_id: task.parent_id
     })
     
     // タスクを完了状態に更新
@@ -161,6 +162,9 @@ export const taskService = {
     
     // 履歴から削除
     await db.history.where('task_id').equals(taskId).delete()
+
+    // 親タスクの場合、関連するサブタスクは完了状態のまま復元する
+    // （サブタスクの履歴は削除しない）
   }
 }
 
@@ -204,6 +208,27 @@ export const historyService = {
     return await query.toArray()
   },
 
+  // 階層構造の履歴取得（親タスクとサブタスクをグループ化）
+  async getHierarchicalHistory(startDate = null, endDate = null) {
+    const allHistory = await this.getHistory(startDate, endDate)
+    
+    // 親タスクとサブタスクを分離
+    const parentTasks = allHistory.filter(record => !record.parent_id)
+    const subtasks = allHistory.filter(record => record.parent_id)
+    
+    // 親タスクにサブタスクを関連付け
+    const hierarchicalHistory = parentTasks.map(parent => {
+      const relatedSubtasks = subtasks.filter(sub => sub.parent_id === parent.task_id)
+      return {
+        ...parent,
+        subtasks: relatedSubtasks.sort((a, b) => new Date(b.completed_at) - new Date(a.completed_at))
+      }
+    })
+    
+    // 親のない独立したタスクも含める（parent_idがnullのもの）
+    return hierarchicalHistory.sort((a, b) => new Date(b.completed_at) - new Date(a.completed_at))
+  },
+
   // 工数統計取得
   async getEffortStats(startDate = null, endDate = null) {
     const history = await this.getHistory(startDate, endDate)
@@ -237,6 +262,13 @@ export const urgencyCalculator = {
     }
     
     try {
+      // 期限なしの場合は低い緊急度（重要度のみで計算）
+      if (!task.due_date) {
+        const effort = task.total_effort_hours || task.effort_hours
+        const importance = task.importance
+        return importance * effort * 0.1 // 期限なしは緊急度を低く設定
+      }
+      
       const dueDate = new Date(task.due_date)
       const now = new Date()
       const daysLeft = Math.max(0, (dueDate - now) / (1000 * 60 * 60 * 24))
@@ -263,6 +295,13 @@ export const urgencyCalculator = {
 
   // デフォルト緊急性計算
   defaultUrgencyCalculation(task) {
+    // 期限なしの場合は低い緊急度
+    if (!task.due_date) {
+      const effort = task.total_effort_hours || task.effort_hours
+      const importance = task.importance
+      return importance * effort * 0.1
+    }
+    
     const dueDate = new Date(task.due_date)
     const now = new Date()
     const daysLeft = Math.max(0, (dueDate - now) / (1000 * 60 * 60 * 24))
