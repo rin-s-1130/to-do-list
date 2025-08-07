@@ -89,7 +89,8 @@ export const taskService = {
           return {
             ...task,
             total_effort_hours: task.effort_hours + subtaskEffortSum,
-            subtasks: subtasks
+            // 完了・未完了問わずすべてのサブタスクを取得
+            subtasks: await db.tasks.where('parent_id').equals(task.id).toArray()
           }
         }
         return {
@@ -118,7 +119,10 @@ export const taskService = {
     })
     
     // タスクを完了状態に更新
-    await db.tasks.update(taskId, { status: 'done' })
+    await db.tasks.update(taskId, { 
+      status: 'done',
+      completed_at: new Date().toISOString()
+    })
     
     // サブタスクがある場合、すべて完了にする
     const subtasks = await db.tasks.where('parent_id').equals(taskId).toArray()
@@ -142,6 +146,21 @@ export const taskService = {
   // タスク更新
   async updateTask(taskId, updates) {
     return await db.tasks.update(taskId, updates)
+  },
+
+  // タスクを未完了に戻す
+  async uncompleteTask(taskId) {
+    const task = await db.tasks.get(taskId)
+    if (!task) throw new Error('Task not found')
+    
+    // タスクを未完了状態に更新
+    await db.tasks.update(taskId, { 
+      status: 'active',
+      completed_at: null
+    })
+    
+    // 履歴から削除
+    await db.history.where('task_id').equals(taskId).delete()
   }
 }
 

@@ -62,6 +62,7 @@
   {#if $tasksByType}
     {@const currentTasks = $selectedTaskType === 'all' 
       ? [...$tasksByType.work, ...$tasksByType.home, ...$tasksByType.skill]
+          .sort((a, b) => b.urgencyScore - a.urgencyScore)
       : $tasksByType[$selectedTaskType]}
     
     <div class="max-w-4xl mx-auto">

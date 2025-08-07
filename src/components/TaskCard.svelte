@@ -1,5 +1,5 @@
 <script>
-  import { taskActions } from '../stores.js'
+  import { taskActions, editMode } from '../stores.js'
   import LoadingSpinner from './LoadingSpinner.svelte'
   import { createEventDispatcher } from 'svelte'
 
@@ -47,16 +47,14 @@
   async function handleComplete() {
     if (isCompleting) return
     
-    if (confirm(`「${task.name}」を完了しますか？`)) {
-      isCompleting = true
-      try {
-        await taskActions.completeTask(task.id)
-        dispatch('completed', task)
-      } catch (error) {
-        console.error('タスク完了エラー:', error)
-      } finally {
-        isCompleting = false
-      }
+    isCompleting = true
+    try {
+      await taskActions.completeTask(task.id)
+      dispatch('completed', task)
+    } catch (error) {
+      console.error('タスク完了エラー:', error)
+    } finally {
+      isCompleting = false
     }
   }
 
@@ -67,29 +65,28 @@
 
   // サブタスク追加
   function handleAddSubtask() {
-    const subtaskName = prompt('サブタスク名を入力してください:')
-    if (subtaskName && subtaskName.trim()) {
-      const subtaskData = {
-        type: task.type,
-        name: subtaskName.trim(),
-        due_date: task.due_date,
-        importance: task.importance,
-        effort_hours: 0.5, // デフォルト0.5時間
-        parent_id: task.id
-      }
-      taskActions.createTask(subtaskData)
-    }
+    taskActions.startAddSubtask(task)
+    // フォームエリアまでスクロール
+    document.querySelector('form')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
   // サブタスク完了処理
   async function handleSubtaskComplete(subtaskId) {
-    if (confirm('このサブタスクを完了しますか？')) {
-      try {
-        await taskActions.completeTask(subtaskId)
-        dispatch('completed', { id: subtaskId, isSubtask: true })
-      } catch (error) {
-        console.error('サブタスク完了エラー:', error)
-      }
+    try {
+      await taskActions.completeTask(subtaskId)
+      dispatch('completed', { id: subtaskId, isSubtask: true })
+    } catch (error) {
+      console.error('サブタスク完了エラー:', error)
+    }
+  }
+
+  // サブタスク未完了に戻す処理
+  async function handleSubtaskUncomplete(subtaskId) {
+    try {
+      await taskActions.uncompleteTask(subtaskId)
+      dispatch('uncompleted', { id: subtaskId, isSubtask: true })
+    } catch (error) {
+      console.error('サブタスク未完了エラー:', error)
     }
   }
 
@@ -100,7 +97,7 @@
 
   // 工数の表示（サブタスク込み）
   $: displayEffort = task.total_effort_hours !== task.effort_hours 
-    ? `${task.total_effort_hours.toFixed(1)}h (${task.effort_hours.toFixed(1)}h + サブ)`
+    ? `${task.total_effort_hours.toFixed(1)}h (${task.effort_hours.toFixed(1)}h + ${(task.total_effort_hours - task.effort_hours).toFixed(1)}h)`
     : `${task.effort_hours.toFixed(1)}h`
 
   // 重要度の色分け（5:暖色 → 1:寒色）
@@ -113,6 +110,23 @@
       1: 'bg-blue-100 text-blue-800'     // 最低：青（寒色）
     }
     return colors[importance] || 'bg-gray-100 text-gray-700'
+  }
+
+  // 親タスクの場合、すべてのサブタスクが完了しているかチェック
+  $: canCompleteParentTask = !task.subtasks || task.subtasks.length === 0 || task.parent_id !== null
+
+  // タスク編集
+  function handleEditTask() {
+    taskActions.startEditTask(task)
+    // フォームエリアまでスクロール
+    document.querySelector('form')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  // サブタスク編集
+  function handleEditSubtask(subtask) {
+    taskActions.startEditTask(subtask)
+    // フォームエリアまでスクロール
+    document.querySelector('form')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 </script>
 
@@ -174,79 +188,131 @@
       {/if}
     </div>
 
-    <!-- サブタスク追加ボタン（親タスクのみ） -->
-    {#if !task.parent_id}
-      <div class="absolute top-3 left-3 z-30">
-        <button
-          type="button"
-          class="px-3 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-full text-xs font-medium transition-all duration-200 shadow-sm hover:shadow-md opacity-0 group-hover:opacity-100"
-          on:click|stopPropagation={handleAddSubtask}
-          title="サブタスク追加"
-        >
-          ➕ サブタスク
-        </button>
-      </div>
-    {/if}
   </div>
 
   <!-- サブタスク一覧 -->
   {#if showSubtasks && task.subtasks && task.subtasks.length > 0}
     <div class="mt-4 space-y-3 relative z-20">
       {#each task.subtasks as subtask}
-        <div class="bg-white bg-opacity-80 border border-gray-200 rounded-lg p-3 hover:shadow-sm transition-shadow duration-200">
+        <div class="border rounded-lg p-3 transition-shadow duration-200 group/subtask
+                    {subtask.status === 'done'
+                      ? 'bg-green-50 bg-opacity-90 border-green-200' 
+                      : 'bg-white bg-opacity-80 border-gray-200 hover:shadow-sm'}">
           <div class="flex items-start justify-between">
             <div class="flex-1">
-              <div class="font-medium text-gray-700 mb-1">{subtask.name}</div>
+              <div class="font-medium mb-1 {subtask.status === 'done' ? 'text-gray-500 line-through' : 'text-gray-700'}">{subtask.name}</div>
               <div class="flex flex-wrap gap-2 text-xs">
-                <span class="px-2 py-1 rounded-full bg-gray-100 text-gray-600">
+                <span class="px-2 py-1 rounded-full {subtask.status === 'done' ? 'bg-gray-200 text-gray-500' : 'bg-gray-100 text-gray-600'}">
                   ⏱️ {subtask.effort_hours.toFixed(1)}h
                 </span>
-                <span class="px-2 py-1 rounded-full {getImportanceColor(subtask.importance)}">
+                <span class="px-2 py-1 rounded-full {subtask.status === 'done' ? 'bg-gray-200 text-gray-500' : getImportanceColor(subtask.importance)}">
                   ⭐ {subtask.importance}/5
                 </span>
+                {#if subtask.status === 'done'}
+                  <span class="px-2 py-1 rounded-full bg-green-200 text-green-800 font-medium">
+                    ✓ 完了済み
+                  </span>
+                {/if}
               </div>
             </div>
-            <button
-              type="button"
-              class="ml-3 px-4 py-2 bg-green-100 hover:bg-green-200 text-green-700 text-sm rounded-full transition-all duration-200 font-semibold shadow-sm hover:shadow-md hover:scale-105"
-              on:click|stopPropagation={() => handleSubtaskComplete(subtask.id)}
-              title="サブタスクを完了"
-            >
-              <span class="flex items-center">
-                <span class="text-base mr-1">✓</span>
-                完了
-              </span>
-            </button>
+            <div class="ml-3 flex gap-2">
+              {#if subtask.status === 'done'}
+                <!-- 未完了に戻すボタン -->
+                <button
+                  type="button"
+                  class="px-4 py-2 bg-orange-100 hover:bg-orange-200 text-orange-700 text-sm rounded-full transition-all duration-200 font-semibold shadow-sm hover:shadow-md hover:scale-105 opacity-0 group-hover/subtask:opacity-100"
+                  on:click|stopPropagation={() => handleSubtaskUncomplete(subtask.id)}
+                  title="サブタスクを未完了に戻す"
+                >
+                  <span class="flex items-center">
+                    <span class="text-base mr-1">↺</span>
+                    未完了に戻す
+                  </span>
+                </button>
+              {:else}
+                <!-- サブタスク編集ボタン -->
+                <button
+                  type="button"
+                  class="px-3 py-1 bg-yellow-100 hover:bg-yellow-200 text-yellow-700 text-xs rounded-full transition-all duration-200 font-medium shadow-sm hover:shadow-md opacity-0 group-hover/subtask:opacity-100"
+                  on:click|stopPropagation={() => handleEditSubtask(subtask)}
+                  title="サブタスクを編集"
+                >
+                  ✏️
+                </button>
+                <!-- サブタスク完了ボタン -->
+                <button
+                  type="button"
+                  class="px-4 py-2 bg-green-100 hover:bg-green-200 text-green-700 text-sm rounded-full transition-all duration-200 font-semibold shadow-sm hover:shadow-md hover:scale-105"
+                  on:click|stopPropagation={() => handleSubtaskComplete(subtask.id)}
+                  title="サブタスクを完了"
+                >
+                  <span class="flex items-center">
+                    <span class="text-base mr-1">✓</span>
+                    完了
+                  </span>
+                </button>
+              {/if}
+            </div>
           </div>
         </div>
       {/each}
     </div>
   {/if}
 
-  <!-- 完了ボタン（大きい丸い長方形） -->
-  <div class="absolute top-3 right-3 z-30">
+  <!-- アクションボタン群（右上・完了ボタンの横） -->
+  <div class="absolute top-3 right-3 z-30 flex gap-2 opacity-0 group-hover:opacity-100">
+    <!-- 編集ボタン -->
     <button
       type="button"
-      class="px-6 py-3 bg-green-100 hover:bg-green-200 text-green-700 rounded-full text-base font-semibold transition-all duration-200 shadow-md hover:shadow-lg opacity-0 group-hover:opacity-100 hover:scale-105"
-      on:click|stopPropagation={handleComplete}
-      disabled={isCompleting}
-      title="タスクを完了"
+      class="px-3 py-1 bg-yellow-100 hover:bg-yellow-200 text-yellow-700 rounded-full text-xs font-medium transition-all duration-200 shadow-sm hover:shadow-md"
+      on:click|stopPropagation={handleEditTask}
+      title="タスク編集"
     >
-      {#if isCompleting}
-        <span class="flex items-center">
-          <svg class="animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-          </svg>
-          処理中
-        </span>
-      {:else}
-        <span class="flex items-center">
-          <span class="text-lg mr-1">✓</span>
-          完了
-        </span>
-      {/if}
+      ✏️
     </button>
+    
+    <!-- サブタスク追加ボタン（親タスクのみ） -->
+    {#if !task.parent_id}
+      <button
+        type="button"
+        class="px-3 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-full text-xs font-medium transition-all duration-200 shadow-sm hover:shadow-md"
+        on:click|stopPropagation={handleAddSubtask}
+        title="サブタスク追加"
+      >
+        ➕
+      </button>
+    {/if}
+
+    <!-- 完了ボタン -->
+    {#if canCompleteParentTask}
+      <button
+        type="button"
+        class="px-6 py-3 bg-green-100 hover:bg-green-200 text-green-700 rounded-full text-base font-semibold transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105"
+        on:click|stopPropagation={handleComplete}
+        disabled={isCompleting}
+        title="タスクを完了"
+      >
+        {#if isCompleting}
+          <span class="flex items-center">
+            <svg class="animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            処理中
+          </span>
+        {:else}
+          <span class="flex items-center">
+            <span class="text-lg mr-1">✓</span>
+            完了
+          </span>
+        {/if}
+      </button>
+    {:else}
+      <!-- サブタスクが未完了の場合のメッセージ -->
+      <div class="px-4 py-2 bg-yellow-100 text-yellow-800 rounded-full text-sm font-medium shadow-md">
+        サブタスクを完了してください
+      </div>
+    {/if}
   </div>
 </div>
 

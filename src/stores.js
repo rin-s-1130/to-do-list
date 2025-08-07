@@ -23,6 +23,15 @@ export const taskForm = writable({
   parent_id: null
 })
 
+// 編集モード関連の状態
+export const editMode = writable({
+  isEditing: false,
+  editingTaskId: null,
+  taskType: 'task', // 'task' | 'subtask'
+  isAddingSubtask: false,
+  parentTaskId: null
+})
+
 // 設定フォーム
 export const settingsForm = writable({
   urgency_formula: '',
@@ -150,6 +159,73 @@ export const taskActions = {
     }
   },
 
+  // 編集モードでタスクを開始
+  startEditTask(task) {
+    const { id, ...taskData } = task
+    taskForm.set(taskData)
+    editMode.set({
+      isEditing: true,
+      editingTaskId: id,
+      taskType: task.parent_id ? 'subtask' : 'task'
+    })
+  },
+
+  // 編集をキャンセル
+  cancelEdit() {
+    editMode.set({
+      isEditing: false,
+      editingTaskId: null,
+      taskType: 'task',
+      isAddingSubtask: false,
+      parentTaskId: null
+    })
+    taskForm.set({
+      type: 'work',
+      name: '',
+      due_date: '',
+      importance: 5,
+      effort_hours: 1,
+      parent_id: null
+    })
+  },
+
+  // 編集を保存
+  async saveEdit() {
+    const editModeValue = get(editMode)
+    const formData = get(taskForm)
+    
+    if (!editModeValue.isEditing) return
+    
+    try {
+      loading.set(true)
+      await this.updateTask(editModeValue.editingTaskId, formData)
+      this.cancelEdit()
+    } catch (err) {
+      error.set('タスクの更新に失敗しました: ' + err.message)
+    } finally {
+      loading.set(false)
+    }
+  },
+
+  // サブタスク追加モード開始
+  startAddSubtask(parentTask) {
+    taskForm.set({
+      type: parentTask.type,
+      name: '',
+      due_date: parentTask.due_date,
+      importance: parentTask.importance,
+      effort_hours: 1,
+      parent_id: parentTask.id
+    })
+    editMode.set({
+      isEditing: false,
+      editingTaskId: null,
+      taskType: 'subtask',
+      isAddingSubtask: true,
+      parentTaskId: parentTask.id
+    })
+  },
+
   // タスク完了
   async completeTask(taskId) {
     try {
@@ -187,6 +263,22 @@ export const taskActions = {
       await this.loadTasks()
     } catch (err) {
       error.set('タスクの更新に失敗しました: ' + err.message)
+    } finally {
+      loading.set(false)
+    }
+  },
+
+  // タスクを未完了に戻す
+  async uncompleteTask(taskId) {
+    try {
+      loading.set(true)
+      await taskService.uncompleteTask(taskId)
+      await Promise.all([
+        this.loadTasks(),
+        historyActions.loadHistory()
+      ])
+    } catch (err) {
+      error.set('タスクの未完了への変更に失敗しました: ' + err.message)
     } finally {
       loading.set(false)
     }
